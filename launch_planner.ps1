@@ -15,6 +15,16 @@ if ($lmStudio) {
     Write-Warning "LM Studio не найден. Укажите путь в launch_planner.ps1."
 }
 
+try {
+    $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 1
+    if ($response.StatusCode -eq 200) {
+        Start-Process $url
+        exit 0
+    }
+} catch {
+    # Сервер еще не запущен — запускаем его ниже.
+}
+
 $python = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
 if (-not $python) {
     $python = (Get-Command py.exe -ErrorAction SilentlyContinue).Source
@@ -42,5 +52,5 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
 if ($ready) {
     Start-Process $url
 } else {
-    Write-Warning "Планировщик не ответил вовремя: $url"
+    throw "Планировщик не ответил вовремя: $url. Проверьте, не занят ли порт 8765 другим процессом."
 }

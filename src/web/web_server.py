@@ -44,6 +44,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self._send(200, _page(), "text/html; charset=utf-8")
+        elif self.path in ("/board.css", "/board.js"):
+            return self._serve_asset(self.path[1:])
         elif self.path == "/board":
             return self._serve_board()
         elif self.path == "/board.html":
@@ -53,6 +55,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(state_payload())
         else:
             self._json({"error": "нет такого адреса"}, 404)
+
+    def _serve_asset(self, name):
+        content_types = {
+            "board.css": "text/css; charset=utf-8",
+            "board.js": "application/javascript; charset=utf-8",
+        }
+        path = os.path.join(UI_DIR, name)
+        try:
+            with open(path, encoding="utf-8") as file:
+                body = file.read()
+        except OSError:
+            return self._json({"error": "ресурс не найден"}, 404)
+        self._send(200, body, content_types[name])
 
     def _serve_board(self):
         page = board_page.render_board(tasks.load_tasks(), tasks.task_line,

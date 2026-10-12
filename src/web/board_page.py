@@ -5,6 +5,7 @@ import calendar
 from ..infrastructure.config import BOARD_PAGE, COLUMNS
 from ..planner import schedule
 from ..education import timetable
+from .board_calendar import render_calendar, render_deadline_calendar
 
 def write_board(tasks, item_text, sorted_items):
     os.makedirs(os.path.dirname(BOARD_PAGE), exist_ok=True)
@@ -21,46 +22,7 @@ def render_board(tasks, item_text, sorted_items):
     routine = html.escape(schedule.schedule_text())
     deadlines = render_deadline_calendar(tasks, item_text)
     return f"""<!doctype html><html lang='ru'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Планировщик</title>
-<style>body{{font-family:system-ui,sans-serif;margin:0;padding:16px;background:#fafafa;color:#222}}
-.nav{{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}} .nav button{{padding:8px 12px;border:1px solid #ccc;border-radius:7px;background:#fff;cursor:pointer}}
-.nav button.active,.nav button:hover{{background:#2d6cdf;color:#fff;border-color:#2d6cdf}} .tab{{display:none}} .tab.active{{display:block}}
-.board{{display:flex;gap:12px;align-items:flex-start;overflow-x:auto}} .col{{flex:1;min-width:220px;background:#eee;border-radius:8px;padding:8px}}
-li{{list-style:none;background:#fff;margin:6px 0;padding:8px;border-radius:4px;box-shadow:0 1px 2px #ddd}}
-ul{{padding:0;margin:0}} h1{{margin-top:0;font-size:22px}} h2{{font-size:18px}}
-.text{{white-space:pre-wrap;background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;overflow:auto}}
-.relations{{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:14px}}
-.relations form{{display:flex;flex-wrap:wrap;gap:8px;align-items:end}}
-.relations label{{display:flex;flex-direction:column;gap:4px;font-size:13px}}
-.relations select,.relations input{{min-width:220px;padding:7px;border:1px solid #bbb;border-radius:5px;background:#fff}}
-.relation-buttons{{display:flex;flex-wrap:wrap;gap:6px}}
-.relation-buttons button{{padding:7px 10px;border:1px solid #bbb;border-radius:5px;background:#f7f7f7;cursor:pointer}}
-.relation-buttons button:hover{{background:#e8f0ff;border-color:#2d6cdf}}
-.task-card{{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;font:inherit;color:inherit;cursor:pointer}}
-.task-card:hover{{color:#2d6cdf}}
-.modal{{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.4);padding:3vh 16px;overflow:auto}}
-.modal-content{{position:relative;max-width:760px;min-height:82vh;max-height:92vh;overflow-y:auto;margin:auto;background:#fff;border-radius:10px;padding:24px;box-shadow:0 8px 30px #3338}}
-.modal-close{{position:absolute;right:12px;top:12px;padding:6px 10px;border:1px solid #bbb;border-radius:5px;background:#fff;cursor:pointer}}
-.task-details h2{{margin-top:0;padding-right:90px}} .task-details li{{box-shadow:none;border:1px solid #eee}}
-#task-modal-body label{{display:flex;flex-direction:column;gap:5px;margin:10px 0;font-weight:600}}
-#task-modal-body input,#task-modal-body select{{box-sizing:border-box;width:100%;max-width:560px;padding:9px;border:1px solid #bbb;border-radius:5px;font:inherit;font-weight:400}}
-#task-modal-body>button,#task-modal-body p>button{{margin:6px 6px 6px 0;padding:8px 12px;border:1px solid #aaa;border-radius:5px;background:#fff;cursor:pointer}}
-#task-modal-body>button:hover,#task-modal-body p>button:hover{{background:#e8f0ff;border-color:#2d6cdf}}
-#task-modal-body hr{{margin:20px 0 10px;border:0;border-top:1px solid #ddd}}
-.task-title{{cursor:pointer}} .task-title:hover{{text-decoration:underline;text-decoration-style:dashed}}
-.column-heading{{display:flex;align-items:center;justify-content:space-between;gap:8px}}
-.add-task-button{{width:28px;height:28px;border:1px solid #aaa;border-radius:50%;background:#fff;font-size:20px;line-height:20px;cursor:pointer}}
-.add-task-button:hover{{background:#2d6cdf;color:#fff;border-color:#2d6cdf}}
-.quick-add{{display:flex;flex-direction:column;gap:10px}} .quick-add input{{padding:8px;border:1px solid #bbb;border-radius:5px}}
-.theme{{margin:0 0 14px}} .muted{{color:#777}}
-.calendar-title{{margin-bottom:8px;text-transform:capitalize}}
-.calendar{{background:#fff;border:1px solid #ddd;border-radius:8px;overflow:hidden}}
-.weekdays,.days{{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr))}}
-.weekday{{padding:8px;text-align:center;font-weight:600;background:#eee;border-bottom:1px solid #ddd}}
-.day{{min-height:110px;padding:6px;border-right:1px solid #eee;border-bottom:1px solid #eee}}
-.day:nth-child(7n){{border-right:0}} .day-number{{font-weight:700;margin-bottom:5px}}
-.day.outside{{background:#f5f5f5;color:#999}} .day.today{{outline:2px solid #2d6cdf;outline-offset:-2px}}
-.event{{font-size:12px;background:#e8f0ff;border-radius:4px;padding:3px 4px;margin:3px 0;overflow-wrap:anywhere}}
-.deadline{{background:#fff1d6}} .overdue{{background:#fff0f0}}</style>
+<link rel='stylesheet' href='/board.css'>
 </head><body><p><a href='/'>← Вернуться в планировщик</a></p><h1>Планировщик</h1>
 <nav class='nav'>{''.join(f"<button data-tab='{tab}'>{label}</button>" for tab, label in (
     ("kanban", "Канбан"), ("themes", "По темам"), ("recurring", "Повторяемое"),
@@ -70,109 +32,7 @@ ul{{padding:0;margin:0}} h1{{margin-top:0;font-size:22px}} h2{{font-size:18px}}
 <section id='recurring' class='tab'>{recurring}</section>
 <section id='calendar' class='tab'><div class='text'><strong>Режим и рутина</strong>\n{routine}</div>{calendar}</section>
 <section id='deadlines' class='tab'>{deadlines}</section>
-<script>
-document.querySelectorAll('[data-tab]').forEach(button => button.onclick = () => {{
-  document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.id === button.dataset.tab));
-  document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('active', item === button));
-}});
-document.querySelector('[data-tab]').classList.add('active');
-async function boardAction(action) {{
-  const form = document.querySelector('#relation-form');
-  const data = new FormData(form);
-  const payload = {{action, task: data.get('task'), related_task: data.get('related_task'), text: data.get('text')}};
-  const response = await fetch('/board/action', {{
-    method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(payload)
-  }});
-  const result = await response.json();
-  if (!response.ok) {{ alert(result.error || 'Ошибка операции'); return; }}
-  alert(result.result);
-  location.reload();
-}}
-async function taskAction(action, task) {{
-  const related = document.querySelector('#related-' + CSS.escape(task));
-  const subtask = document.querySelector('#subtask-' + CSS.escape(task));
-  const selected = related ? related.value : '';
-  const text = subtask ? subtask.value : '';
-  const title = document.querySelector('#title-' + CSS.escape(task));
-  const importance = document.querySelector('#importance-' + CSS.escape(task));
-  const minutes = document.querySelector('#minutes-' + CSS.escape(task));
-  const tags = document.querySelector('#tags-' + CSS.escape(task));
-  if (action === 'archive' && !confirm('Переместить задачу в архив?')) return;
-  if (action === 'delete' && !confirm('Удалить задачу окончательно? Это действие нельзя отменить.')) return;
-  if (action === 'subtask' && !text.trim()) {{ alert('Введите название подзадачи'); return; }}
-  if (action === 'edit' && (!title.value.trim() || Number(importance.value) < 0 || Number(importance.value) > 1 || Number(minutes.value) < 0)) {{
-    alert('Проверьте название, приоритет от 0 до 1 и длительность'); return;
-  }}
-  const response = await fetch('/board/action', {{
-    method: 'POST', headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{action, task, related_task: selected, text,
-      title: title ? title.value : null,
-      importance: importance ? Number(importance.value) : null,
-      minutes: minutes ? Number(minutes.value) : null,
-      tags: tags ? tags.value.split(',').map(item => item.trim()).filter(Boolean) : null}})
-  }});
-  const result = await response.json();
-  if (!response.ok) {{ alert(result.error || 'Ошибка операции'); return; }}
-  alert(result.result);
-  location.reload();
-}}
-function showTask(id) {{
-  const source = document.querySelector('#task-details-' + CSS.escape(id));
-  const body = document.querySelector('#task-modal-body');
-  const modal = document.querySelector('#task-modal');
-  if (!source || !body || !modal) return;
-  body.innerHTML = source.innerHTML;
-  modal.hidden = false;
-}}
-function editTitle(id) {{
-  const title = document.querySelector('#task-modal .task-title') ||
-    document.querySelector('#task-details-' + CSS.escape(id) + ' .task-title');
-  if (!title || title.querySelector('input')) return;
-  const input = document.createElement('input');
-  input.value = title.textContent;
-  input.className = 'inline-title';
-  input.addEventListener('keydown', event => {{
-    if (event.key === 'Enter') saveInlineTitle(id, input.value);
-    if (event.key === 'Escape') showTask(id);
-  }});
-  input.addEventListener('blur', () => saveInlineTitle(id, input.value));
-  title.replaceChildren(input);
-  input.focus();
-  input.select();
-}}
-async function saveInlineTitle(id, value) {{
-  if (!value.trim()) return;
-  await sendBoardAction({{action:'edit', task:id, title:value, importance:null, minutes:null, tags:null}});
-}}
-async function addTask(column) {{
-  const title = prompt('Название новой задачи:');
-  if (!title || !title.trim()) return;
-  const tags = prompt('Темы/теги через запятую (необязательно):') || '';
-  await sendBoardAction({{action:'add', column, title:title.trim(), tags:tags.split(',').map(item => item.trim()).filter(Boolean)}});
-}}
-async function sendBoardAction(payload) {{
-  const response = await fetch('/board/action', {{
-    method: 'POST', headers: {{'Content-Type':'application/json'}}, body: JSON.stringify(payload)
-  }});
-  const result = await response.json();
-  if (!response.ok) {{ alert(result.error || 'Ошибка операции'); return; }}
-  alert(result.result);
-  location.reload();
-}}
-function closeTask() {{
-  const modal = document.querySelector('#task-modal');
-  if (modal) modal.hidden = true;
-}}
-document.addEventListener('DOMContentLoaded', () => {{
-  const modal = document.querySelector('#task-modal');
-  if (modal) modal.addEventListener('click', event => {{
-    if (event.target.id === 'task-modal') closeTask();
-  }});
-}});
-document.addEventListener('keydown', event => {{
-  if (event.key === 'Escape') closeTask();
-}});
-</script>{task_details}</body></html>"""
+<script src='/board.js'></script>{task_details}</body></html>"""
 
 def render_relations(tasks):
     if not tasks:
@@ -297,103 +157,3 @@ def render_recurring():
         rows.append(f"<li><strong>{html.escape(item.get('title', 'Без названия'))}</strong> — "
                     f"{html.escape(item.get('start', ''))}, {html.escape(repeat + until)}</li>")
     return "<ul>" + "".join(rows) + "</ul>"
-
-def render_calendar():
-    today = datetime.date.today()
-    month_names = (
-        "", "январь", "февраль", "март", "апрель", "май", "июнь",
-        "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
-    )
-    first = today.replace(day=1)
-    grid_start = first - datetime.timedelta(days=first.weekday())
-    last = calendar.monthrange(today.year, today.month)[1]
-    grid_end = today.replace(day=last)
-    grid_end += datetime.timedelta(days=6 - grid_end.weekday())
-    cells = []
-    day = grid_start
-    while day <= grid_end:
-        items = timetable.items_on(day)
-        events = "".join(
-            f"<div class='event'><strong>{html.escape(item.get('start', ''))}</strong> "
-            f"{html.escape(item.get('title', ''))}</div>"
-            for item in items
-        )
-        classes = ["day"]
-        if day.month != today.month:
-            classes.append("outside")
-        if day == today:
-            classes.append("today")
-        event_markup = events or "<span class='muted'>—</span>"
-        cells.append(
-            f"<div class='{' '.join(classes)}'><div class='day-number'>{day.day}</div>"
-            f"{event_markup}</div>"
-        )
-        day += datetime.timedelta(days=1)
-    weekdays = "".join(f"<div class='weekday'>{name}</div>" for name in (
-        "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"))
-    return (
-        f"<h2 class='calendar-title'>{month_names[today.month]} "
-        f"{today.year}</h2><div class='calendar'><div class='weekdays'>{weekdays}</div>"
-        f"<div class='days'>{''.join(cells)}</div></div>"
-    )
-
-def render_deadlines(tasks, item_text):
-    dated = [task for task in tasks
-             if task.get("due") and task.get("column") not in ("Готово", "Архив")]
-    dated.sort(key=lambda task: task["due"])
-    if not dated:
-        return "<p class='muted'>Активных дедлайнов нет.</p>"
-    return "<ul>" + "".join(
-        f"<li><strong>{html.escape(task['due'])}</strong> — {html.escape(item_text(task))}</li>"
-        for task in dated
-    ) + "</ul>"
-
-def render_deadline_calendar(tasks, item_text):
-    today = datetime.date.today()
-    month_names = (
-        "", "январь", "февраль", "март", "апрель", "май", "июнь",
-        "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
-    )
-    grouped = {}
-    for task in tasks:
-        if task.get("column") in ("Готово", "Архив") or not task.get("due"):
-            continue
-        try:
-            due = datetime.date.fromisoformat(task["due"])
-        except (TypeError, ValueError):
-            continue
-        grouped.setdefault(due, []).append(task)
-
-    first = today.replace(day=1)
-    grid_start = first - datetime.timedelta(days=first.weekday())
-    last = calendar.monthrange(today.year, today.month)[1]
-    grid_end = today.replace(day=last)
-    grid_end += datetime.timedelta(days=6 - grid_end.weekday())
-    cells = []
-    day = grid_start
-    while day <= grid_end:
-        classes = ["day"]
-        if day.month != today.month:
-            classes.append("outside")
-        if day == today:
-            classes.append("today")
-        if day < today and day in grouped:
-            classes.append("overdue")
-        items = "".join(
-            f"<div class='event deadline'><strong>{html.escape(task.get('title', ''))}</strong>"
-            f"<br><span>{html.escape(item_text(task))}</span></div>"
-            for task in grouped.get(day, [])
-        )
-        event_markup = items or "<span class='muted'>—</span>"
-        cells.append(
-            f"<div class='{' '.join(classes)}'><div class='day-number'>{day.day}</div>"
-            f"{event_markup}</div>"
-        )
-        day += datetime.timedelta(days=1)
-    weekdays = "".join(f"<div class='weekday'>{name}</div>" for name in (
-        "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"))
-    return (
-        f"<h2 class='calendar-title'>{month_names[today.month]} {today.year}</h2>"
-        f"<div class='calendar'><div class='weekdays'>{weekdays}</div>"
-        f"<div class='days'>{''.join(cells)}</div></div>"
-    )
