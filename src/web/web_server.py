@@ -2,7 +2,7 @@ import json, os
 from http.server import BaseHTTPRequestHandler
 from ..infrastructure.config import UI_DIR, BOARD_PAGE
 from ..conversation import chats, agent, topics
-from ..planner import tasks, goals, schedule
+from ..planner import tasks, goals, schedule, themes
 from ..education import subjects, timetable
 from . import board_page
 from ..infrastructure.journal import show_journal
@@ -132,7 +132,13 @@ class Handler(BaseHTTPRequestHandler):
             action = str(body.get("action") or "")
             first = str(body.get("task") or "")
             second = str(body.get("related_task") or "")
-            if action == "link":
+            if action == "add_theme":
+                result = themes.add(body.get("name", ""))
+            elif action == "rename_theme":
+                result = themes.rename(first, body.get("name", ""))
+            elif action == "move":
+                result = tasks.move_task(first, str(body.get("column") or ""))
+            elif action == "link":
                 result = tasks.link_tasks(first, second)
             elif action == "block":
                 result = tasks.block_task(first, second)

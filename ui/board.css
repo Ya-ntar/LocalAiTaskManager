@@ -2,6 +2,8 @@ body{font-family:system-ui,sans-serif;margin:0;padding:16px;background:#fafafa;c
 .nav{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0} .nav button{padding:8px 12px;border:1px solid #ccc;border-radius:7px;background:#fff;cursor:pointer}
 .nav button.active,.nav button:hover{background:#2d6cdf;color:#fff;border-color:#2d6cdf} .tab{display:none} .tab.active{display:block}
 .board{display:flex;gap:12px;align-items:flex-start;overflow-x:auto} .col{flex:1;min-width:220px;background:#eee;border-radius:8px;padding:8px}
+.col.drag-over{background:#dce9ff;outline:2px dashed #2d6cdf;outline-offset:-2px}
+.task-item{cursor:grab}.task-item:active{cursor:grabbing}.task-item.dragging{opacity:.45}
 li{list-style:none;background:#fff;margin:6px 0;padding:8px;border-radius:4px;box-shadow:0 1px 2px #ddd}
 ul{padding:0;margin:0} h1{margin-top:0;font-size:22px} h2{font-size:18px}
 .text{white-space:pre-wrap;background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;overflow:auto}
@@ -29,6 +31,22 @@ ul{padding:0;margin:0} h1{margin-top:0;font-size:22px} h2{font-size:18px}
 .add-task-button:hover{background:#2d6cdf;color:#fff;border-color:#2d6cdf}
 .quick-add{display:flex;flex-direction:column;gap:10px} .quick-add input{padding:8px;border:1px solid #bbb;border-radius:5px}
 .theme{margin:0 0 14px} .muted{color:#777}
+.themes-layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
+.themes-sidebar,.themes-content{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px}
+.theme-sidebar-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.theme-sidebar-heading h2{margin:0}
+#theme-search,.theme-search{box-sizing:border-box;width:100%;padding:8px;border:1px solid #bbb;border-radius:5px}
+#theme-search{margin:10px 0}
+.add-theme-button{width:28px;height:28px;border:1px solid #aaa;border-radius:50%;background:#fff;font-size:20px;cursor:pointer}
+.theme-list-item{display:flex;width:100%;justify-content:space-between;gap:8px;padding:9px;border:0;border-radius:5px;background:transparent;text-align:left;cursor:pointer;font:inherit}
+.theme-list-item:hover,.theme-list-item.active{background:#e8f0ff;color:#174ea6}
+.theme-rename{color:#777}
+.theme-task-panel h2{margin-top:0}
+.theme-picker{border:1px solid #ddd;border-radius:6px;padding:8px;max-width:560px}
+.theme-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:5px;margin-top:8px;max-height:180px;overflow-y:auto}
+.theme-options label{padding:5px;border-radius:4px;cursor:pointer}
+.theme-options label:hover{background:#f1f1f1}
+@media (max-width:700px){.themes-layout{grid-template-columns:1fr}}
 .calendar-title{margin-bottom:8px;text-transform:capitalize}
 .calendar{background:#fff;border:1px solid #ddd;border-radius:8px;overflow:hidden}
 .weekdays,.days{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr))}

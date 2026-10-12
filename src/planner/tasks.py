@@ -1,4 +1,6 @@
 import datetime
+import json
+import re
 import uuid
 from . import priority
 from ..infrastructure.config import COLUMNS, EFFORTS
@@ -37,6 +39,108 @@ def to_window(value):
 
 def find_tasks(tasks, title):
     return [t for t in tasks if title.lower() in t["title"].lower()]
+
+def query_tasks(filters=None):
+    """Return task records matching a model-selected set of filters."""
+    filters = filters or {}
+    result = []
+    for task in load_tasks():
+        if filters.get("id") and task.get("id") != filters["id"]:
+            continue
+        if filters.get("title_contains") and filters["title_contains"].lower() not in task["title"].lower():
+            continue
+        if filters.get("subject") and task.get("subject", "").lower() != filters["subject"].lower():
+            continue
+        if filters.get("column") and task.get("column") != filters["column"]:
+            continue
+        if filters.get("tag") and filters["tag"].lower() not in [str(x).lower() for x in task.get("tags", [])]:
+            continue
+        if filters.get("due_before") and (not task.get("due") or task["due"] >= filters["due_before"]):
+            continue
+        if filters.get("due_after") and (not task.get("due") or task["due"] <= filters["due_after"]):
+            continue
+        result.append(task)
+    return [_task_snapshot(task) for task in result]
+
+def _task_snapshot(task):
+    return {key: task.get(key) for key in (
+        "id", "title", "column", "due", "effort", "minutes", "importance",
+        "subject", "tags", "related_ids", "blocked_by", "parent_id"
+    )}
+
+def propose_task_changes(operations):
+    """Validate and render a batch of ID-based changes without applying it."""
+    if not isinstance(operations, list) or not operations:
+        return "План изменений должен содержать непустой список operations"
+    current = {task["id"]: task for task in load_tasks()}
+    preview = []
+    allowed = {"delete", "archive", "move", "update", "link", "block", "unblock"}
+    for operation in operations:
+        if not isinstance(operation, dict) or operation.get("action") not in allowed:
+            return "Неизвестная операция. Разрешены: " + ", ".join(sorted(allowed))
+        action = operation["action"]
+        task_id = operation.get("task_id")
+        if task_id not in current:
+            return f"Задача с id «{task_id}» не найдена"
+        other_id = operation.get("other_task_id")
+        if action in {"link", "block", "unblock"} and other_id not in current:
+            return f"Задача с id «{other_id}» не найдена"
+        if action == "move" and operation.get("column") not in COLUMNS:
+            return f"Нет колонки «{operation.get('column')}». Есть: {', '.join(COLUMNS)}"
+        preview.append({
+            "action": action,
+            "task_id": task_id,
+            "other_task_id": other_id,
+            "task": _task_snapshot(current[task_id]),
+            "other_task": _task_snapshot(current[other_id]) if other_id else None,
+            "column": operation.get("column"),
+            "changes": operation.get("changes", {}),
+            "reason": operation.get("reason", "")
+        })
+    return json.dumps({"operations": operations, "preview": preview}, ensure_ascii=False)
+
+def apply_task_changes(operations):
+    """Apply a previously previewed batch using stable task IDs."""
+    preview = propose_task_changes(operations)
+    if not preview.startswith("{"):
+        return preview
+    current = {task["id"]: task for task in load_tasks()}
+    changed = []
+    for operation in operations:
+        action = operation["action"]
+        task = current[operation["task_id"]]
+        if action == "delete":
+            current.pop(task["id"])
+        elif action == "archive":
+            task["column"] = "Архив"
+        elif action == "move":
+            task["column"] = operation["column"]
+        elif action == "update":
+            for key, value in operation.get("changes", {}).items():
+                if key in {"title", "due", "effort", "minutes", "risk", "importance", "window_days", "subject", "tags", "column"}:
+                    task[key] = value
+        elif action in {"link", "block", "unblock"}:
+            other = current[operation["other_task_id"]]
+            field = "related_ids" if action == "link" else "blocked_by"
+            if action == "block":
+                if other["id"] not in task.setdefault(field, []):
+                    task[field].append(other["id"])
+            elif action == "unblock":
+                if other["id"] in task.setdefault(field, []):
+                    task[field].remove(other["id"])
+            elif other["id"] not in task.setdefault(field, []):
+                task[field].append(other["id"])
+            if action == "link" and task["id"] not in other.setdefault("related_ids", []):
+                other["related_ids"].append(task["id"])
+        if action != "delete":
+            task["touched"] = today().isoformat()
+        changed.append({"action": action, "task_id": task["id"], "title": task["title"]})
+    remaining_ids = set(current)
+    for task in current.values():
+        task["related_ids"] = [item for item in task.get("related_ids", []) if item in remaining_ids]
+        task["blocked_by"] = [item for item in task.get("blocked_by", []) if item in remaining_ids]
+    save_tasks(list(current.values()))
+    return json.dumps({"applied": changed, "count": len(changed)}, ensure_ascii=False)
 
 def add_task(column, title, due="", effort="", minutes=0, risk="", importance=None,
              window_days=None, subject="", parent_id="", tags=None):
@@ -129,8 +233,21 @@ def edit_task(task, title=None, importance=None, minutes=None, tags=None):
     save_tasks(tasks)
     return f"Обновлено: {task_line(target)}"
 
-def delete_task(title):
+def delete_task(title="", task_id=""):
     tasks = load_tasks()
+    requested_ids = re.findall(r"\b[a-f0-9]{8}\b", str(task_id or ""), re.IGNORECASE)
+    if not requested_ids:
+        requested_ids = re.findall(r"\b[a-f0-9]{8}\b", str(title or ""), re.IGNORECASE)
+    if requested_ids:
+        by_id = {task.get("id"): task for task in tasks}
+        missing = [item for item in requested_ids if item not in by_id]
+        if missing:
+            return f"Задачи с id не найдены: {', '.join(missing)}"
+        removed = [by_id[item] for item in requested_ids]
+        tasks = [task for task in tasks if task.get("id") not in requested_ids]
+        save_tasks(tasks)
+        names = "; ".join(f"«{task['title']}» ({task['id']})" for task in removed)
+        return f"Удалено: {names}"
     matches = find_tasks(tasks, title)
     if not matches:
         return f"Задача «{title}» не найдена"
@@ -176,6 +293,23 @@ def archive_task(task):
     target["touched"] = today().isoformat()
     save_tasks(tasks)
     return f"Задача перемещена в архив: «{target['title']}»"
+
+
+def move_task(task, column):
+    if column not in COLUMNS:
+        return f"Нет колонки «{column}»"
+    tasks = load_tasks()
+    target = _get_task(tasks, task)
+    if not target:
+        return f"Задача «{task}» не найдена или найдено несколько"
+    if target.get("column") == column:
+        return f"Задача уже находится в колонке «{column}»"
+    previous = target.get("column", "Входящие")
+    target["column"] = column
+    target["touched"] = today().isoformat()
+    save_tasks(tasks)
+    return f"Задача перемещена: «{previous}» → «{column}»"
+
 
 def delete_archived_task(task):
     tasks = load_tasks()

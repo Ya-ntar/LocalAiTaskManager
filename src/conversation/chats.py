@@ -35,7 +35,8 @@ def list_chats():
 def create_chat(title="Новый чат"):
     now = datetime.datetime.now()
     cid = f"{now:%Y%m%d-%H%M%S}-{now.microsecond // 1000:03d}"
-    chat = {"id": cid, "title": title, "created": _now_iso(), "updated": _now_iso(), "messages": []}
+    chat = {"id": cid, "title": title, "created": _now_iso(), "updated": _now_iso(),
+            "messages": [], "pending_plan": None}
     _write_chat(chat)
     return chat
 
@@ -54,7 +55,13 @@ def ensure_current():
 
 def current_chat():
     ensure_current()
-    return _read_chat(STATE["chat_id"])
+    chat = _read_chat(STATE["chat_id"])
+    if not chat:
+        return None
+    chat.setdefault("title", "Новый чат")
+    chat.setdefault("messages", [])
+    chat.setdefault("pending_plan", None)
+    return chat
 
 def switch_chat(cid):
     if not _read_chat(cid):
@@ -89,6 +96,9 @@ def delete_chat(cid):
     return None
 
 def record(chat, user_text, reply):
+    latest = _read_chat(chat["id"])
+    if latest is not None:
+        chat["pending_plan"] = latest.get("pending_plan")
     if user_text:
         if chat["title"] == "Новый чат":
             chat["title"] = user_text.strip().replace("\n", " ")[:40]
@@ -98,6 +108,12 @@ def record(chat, user_text, reply):
     chat["updated"] = _now_iso()
     _write_chat(chat)
 
+def set_pending_plan(chat, plan):
+    chat["pending_plan"] = plan
+    chat["updated"] = _now_iso()
+    _write_chat(chat)
+
 def chats_summary():
-    return [{"id": c["id"], "title": c["title"], "count": len(c.get("messages", []))}
+    return [{"id": c["id"], "title": c.get("title", "Новый чат"),
+             "count": len(c.get("messages", []))}
             for c in list_chats()]

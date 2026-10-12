@@ -1,11 +1,11 @@
 import html
 import os
-import datetime
-import calendar
 from ..infrastructure.config import BOARD_PAGE, COLUMNS
-from ..planner import schedule
+from ..planner import schedule, themes as theme_model
 from ..education import timetable
 from .board_calendar import render_calendar, render_deadline_calendar
+
+DRAG_COLUMNS = {"Входящие", "В процессе", "Готово"}
 
 def write_board(tasks, item_text, sorted_items):
     os.makedirs(os.path.dirname(BOARD_PAGE), exist_ok=True)
@@ -13,10 +13,11 @@ def write_board(tasks, item_text, sorted_items):
         f.write(render_board(tasks, item_text, sorted_items))
 
 def render_board(tasks, item_text, sorted_items):
+    theme_names = theme_model.load(tasks)
     cols = render_columns(tasks, item_text, sorted_items)
     relations = render_relations(tasks)
-    task_details = render_task_details(tasks)
-    themes = render_themes(tasks, item_text)
+    task_details = render_task_details(tasks, theme_names)
+    themes = render_themes(tasks, item_text, theme_names)
     recurring = render_recurring()
     calendar = render_calendar()
     routine = html.escape(schedule.schedule_text())
@@ -32,7 +33,7 @@ def render_board(tasks, item_text, sorted_items):
 <section id='recurring' class='tab'>{recurring}</section>
 <section id='calendar' class='tab'><div class='text'><strong>Режим и рутина</strong>\n{routine}</div>{calendar}</section>
 <section id='deadlines' class='tab'>{deadlines}</section>
-<script src='/board.js'></script>{task_details}</body></html>"""
+<script src='/board.js'></script>{render_task_creator(theme_names)}{task_details}</body></html>"""
 
 def render_relations(tasks):
     if not tasks:
@@ -60,20 +61,39 @@ def render_columns(tasks, item_text, sorted_items):
     cols = ""
     for c in COLUMNS:
         items = "".join(
-            f"<li><button class='task-card' type='button' data-task-id='{html.escape(t['id'], quote=True)}' "
+            f"<li class='task-item' draggable='true' data-task-id='{html.escape(t['id'], quote=True)}' "
+            f"data-column='{html.escape(c, quote=True)}'><button class='task-card' type='button' "
             f"onclick=\"showTask('{html.escape(t['id'], quote=True)}')\">"
             f"{html.escape(item_text(t))}</button></li>"
             for t in sorted_items(tasks, c)
         )
+        drop_attribute = (
+            f" data-drop-column='{html.escape(c, quote=True)}'"
+            if c in DRAG_COLUMNS else ""
+        )
         cols += (
-            f"<div class='col'><div class='column-heading'><h2>{c}</h2>"
+            f"<div class='col'{drop_attribute}><div class='column-heading'><h2>{c}</h2>"
             f"<button class='add-task-button' type='button' title='Добавить задачу в колонку "
             f"{html.escape(c, quote=True)}' onclick=\"addTask('{html.escape(c, quote=True)}')\">+</button>"
             f"</div><ul>{items}</ul></div>"
         )
     return f"<div class='board'>{cols}</div>"
 
-def render_task_details(tasks):
+def render_theme_picker(task_id, selected, theme_names):
+    options = "".join(
+        f"<label><input type='checkbox' value='{html.escape(name, quote=True)}'"
+        f"{' checked' if (name in selected or (name == theme_model.DEFAULT_THEME and not selected)) else ''}>"
+        f"{html.escape(name)}</label>"
+        for name in theme_names
+    )
+    return (
+        f"<div class='theme-picker' id='theme-picker-{html.escape(task_id, quote=True)}'>"
+        "<input class='theme-search' type='search' placeholder='Поиск темы'>"
+        f"<div class='theme-options'>{options or '<span class=\"muted\">Тем пока нет</span>'}</div></div>"
+    )
+
+
+def render_task_details(tasks, theme_names):
     by_id = {task["id"]: task for task in tasks}
     blocks = []
     for task in tasks:
@@ -105,8 +125,9 @@ def render_task_details(tasks):
             f"<label>Название <input id='title-{html.escape(task['id'], quote=True)}' value='{html.escape(task['title'], quote=True)}'></label>"
             f"<label>Приоритет <input id='importance-{html.escape(task['id'], quote=True)}' type='number' min='0' max='1' step='0.05' value='{task.get('importance', 0.5)}'></label>"
             f"<label>Минуты <input id='minutes-{html.escape(task['id'], quote=True)}' type='number' min='0' step='5' value='{int(task.get('minutes') or 0)}'></label>"
-            f"<label>Теги/темы <input id='tags-{html.escape(task['id'], quote=True)}' value='{html.escape(', '.join(task.get('tags', [])), quote=True)}' placeholder='через запятую'></label>"
-            f"<button type='button' onclick=\"taskAction('edit','{html.escape(task['id'], quote=True)}')\">Сохранить изменения</button>"
+            "<label>Темы</label>"
+            + render_theme_picker(task["id"], task.get("tags", []), theme_names)
+            + f"<button type='button' onclick=\"taskAction('edit','{html.escape(task['id'], quote=True)}')\">Сохранить изменения</button>"
             f"<label>Связать с задачей <select id='related-{html.escape(task['id'], quote=True)}'>{options}</select></label> "
             f"<button type='button' onclick=\"taskAction('link','{html.escape(task['id'], quote=True)}')\">Связать</button> "
             f"<button type='button' onclick=\"taskAction('block','{html.escape(task['id'], quote=True)}')\">Сделать блокирующей</button>"
@@ -128,20 +149,61 @@ def render_task_details(tasks):
         "<div id='task-details-store' hidden>" + "".join(blocks) + "</div>"
     )
 
-def render_themes(tasks, item_text):
-    groups = {}
-    for task in tasks:
-        tags = task.get("tags") or ([task["subject"]] if task.get("subject") else [])
-        for tag in tags or ["Без темы"]:
-            groups.setdefault(tag, []).append(task)
-    if not groups:
-        return "<p class='muted'>Задач нет.</p>"
-    return "".join(
-        f"<div class='theme'><h2>{html.escape(name)}</h2><ul>" +
-        "".join(f"<li>{html.escape(item_text(task))}</li>" for task in sorted(items, key=item_text)) +
-        "</ul></div>"
-        for name, items in sorted(groups.items(), key=lambda pair: pair[0].lower())
+def render_theme_tasks(tasks, item_text, theme_name):
+    if theme_name == theme_model.DEFAULT_THEME:
+        selected = [task for task in tasks if not task.get("tags")]
+    else:
+        selected = [task for task in tasks if theme_name in task.get("tags", [])]
+    if not selected:
+        return "<p class='muted'>Для этой темы задач нет.</p>"
+    return "<ul>" + "".join(
+        f"<li><button class='task-card' type='button' onclick=\"showTask('{html.escape(task['id'], quote=True)}')\">"
+        f"{html.escape(item_text(task))}</button></li>"
+        for task in sorted(selected, key=item_text)
+    ) + "</ul>"
+
+
+def render_themes(tasks, item_text, theme_names):
+    def rename_control(name):
+        if name == theme_model.DEFAULT_THEME:
+            return ""
+        return "<span class='theme-rename' title='Переименовать'>✎</span>"
+
+    items = "".join(
+        f"<button class='theme-list-item' type='button' data-theme='{html.escape(name, quote=True)}'>"
+        f"<span>{html.escape(name)}</span>"
+        f"{rename_control(name)}</button>"
+        for name in theme_names
     )
+    panels = "".join(
+        f"<div class='theme-task-panel' data-theme-panel='{html.escape(name, quote=True)}' hidden>"
+        f"<h2>{html.escape(name)}</h2>{render_theme_tasks(tasks, item_text, name)}</div>"
+        for name in theme_names
+    )
+    empty = "<p class='muted'>Тем пока нет.</p>" if not theme_names else ""
+    return f"""<div class='themes-layout'>
+<aside class='themes-sidebar'><div class='theme-sidebar-heading'><h2>Темы</h2>
+<button type='button' class='add-theme-button' onclick='addTheme()'>+</button></div>
+<input id='theme-search' type='search' placeholder='Поиск тем'>
+<div id='theme-list'>{items}</div>{empty}</aside>
+<div id='theme-tasks' class='themes-content'>{panels}
+<p id='theme-task-empty' class='muted'>Выберите тему слева.</p></div></div>"""
+
+
+def render_task_creator(theme_names):
+    options = "".join(
+        f"<label><input type='checkbox' value='{html.escape(name, quote=True)}'>{html.escape(name)}</label>"
+        for name in theme_names
+    )
+    return f"""<div id='task-create-modal' class='modal' hidden><div class='modal-content'>
+<button class='modal-close' type='button' onclick='closeTaskCreator()'>Закрыть</button>
+<h2>Новая задача</h2>
+<label>Название <input id='new-task-title'></label>
+<label>Темы</label>
+<div id='new-task-themes' class='theme-picker'><input class='theme-search' type='search' placeholder='Поиск темы'>
+<div class='theme-options'>{options or '<span class="muted">Сначала добавьте тему</span>'}</div></div>
+<button type='button' onclick='saveNewTask()'>Добавить задачу</button>
+</div></div>"""
 
 def render_recurring():
     items = [item for item in timetable._load() if not item.get("date") and item.get("anchor")]

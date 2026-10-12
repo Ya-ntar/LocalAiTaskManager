@@ -8,6 +8,31 @@ def fn(name, desc, props, required=()):
             "parameters": {"type": "object", "properties": props, "required": list(required)}}}
 
 TOOLS = [
+    fn("query_tasks", "Найти задачи по структурированным фильтрам. Используй перед групповым анализом или изменением.", {
+        "filters": {"type": "object", "properties": {
+            "id": {"type": "string"}, "title_contains": {"type": "string"},
+            "subject": {"type": "string"}, "column": {"type": "string", "enum": COLUMNS},
+            "tag": {"type": "string"}, "due_before": {"type": "string"},
+            "due_after": {"type": "string"}}}}),
+    fn("propose_task_changes", "Проверить и показать план массовых изменений без применения. Всегда используй для групповых или неоднозначных изменений.", {
+        "operations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["delete", "archive", "move", "update", "link", "block", "unblock"]},
+                    "task_id": {"type": "string"},
+                    "other_task_id": {"type": "string"},
+                    "column": {"type": "string", "enum": COLUMNS},
+                    "changes": {"type": "object"},
+                    "reason": {"type": "string"}
+                },
+                "required": ["action", "task_id"]
+            }
+        }
+    }, ["operations"]),
+    fn("apply_task_changes", "Применить ранее показанный и подтверждённый пользователем план по точным ID. Не выдумывай операции заново.", {
+        "operations": {"type": "array", "items": {"type": "object"}}}, ["operations"]),
     fn("show_board", "Показать все задачи по колонкам", {}),
     fn("task_details", "Показать задачу, ее подтаски, заметки, связи и блокировки", {
         "task": {"type": "string"}}, ["task"]),
@@ -20,7 +45,7 @@ TOOLS = [
     fn("show_timetable", "Показать занятия и свободные окна на дату (YYYY-MM-DD, по умолчанию сегодня) или на несколько дней", {
         "date": {"type": "string"},
         "days": {"type": "integer", "description": "От 1 до 7"}}),
-    fn("list_topics", "Показать открытые темы (закрытые — если попросили)", {
+    fn("list_topics", "Показать открытые темы, НЕ задачи. Для поиска, сравнения и групповой работы с задачами всегда используй query_tasks или show_board.", {
         "include_closed": {"type": "boolean"}}),
     fn("read_topic", "Прочитать записи по теме", {
         "topic": {"type": "string"}}, ["topic"]),
@@ -48,8 +73,9 @@ TOOLS = [
         "window_days": {"type": "integer"},
         "subject": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}}}, ["title"]),
-    fn("delete_task", "Удалить задачу навсегда. Только по явной просьбе пользователя", {
-        "title": {"type": "string"}}, ["title"]),
+    fn("delete_task", "Удалить одну или несколько задач навсегда. Для дубликатов используй точные id; только по явной просьбе пользователя", {
+        "title": {"type": "string", "description": "Название только для одной однозначной задачи"},
+        "task_id": {"type": "string", "description": "Один или несколько точных id задач"}}),
     fn("edit_task", "Изменить название, приоритет, длительность или темы задачи", {
         "task": {"type": "string"}, "title": {"type": "string"},
         "importance": {"type": "number"}, "minutes": {"type": "integer"},
@@ -126,9 +152,12 @@ WRITE = {"add_task", "update_task", "edit_task", "delete_task", "add_task_note",
          "link_tasks", "block_task", "unblock_task", "add_goal",
          "open_topic", "add_note", "close_topic", "reopen_topic", "set_schedule",
          "add_timetable_items", "skip_timetable_item", "move_timetable_item", "remove_timetable_item",
-         "add_homework", "done_homework", "add_subject_note"}
+         "add_homework", "done_homework", "add_subject_note", "apply_task_changes"}
 
 FUNCS = {
+    "query_tasks": tasks.query_tasks,
+    "propose_task_changes": tasks.propose_task_changes,
+    "apply_task_changes": tasks.apply_task_changes,
     "show_board": tasks.show_board, "deadlines": tasks.deadlines,
     "add_task": tasks.add_task, "update_task": tasks.update_task, "delete_task": tasks.delete_task,
     "task_details": tasks.task_details, "edit_task": tasks.edit_task,
@@ -147,3 +176,9 @@ FUNCS = {
     "open_topic": topics.open_topic, "add_note": topics.add_note,
     "close_topic": topics.close_topic, "reopen_topic": topics.reopen_topic,
 }
+
+# Keep the batch operations available to internal callers as well as the
+# model dispatcher. This prevents older call paths from bypassing FUNCS.
+query_tasks = tasks.query_tasks
+propose_task_changes = tasks.propose_task_changes
+apply_task_changes = tasks.apply_task_changes

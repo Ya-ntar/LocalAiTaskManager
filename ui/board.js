@@ -1,8 +1,13 @@
 document.querySelectorAll('[data-tab]').forEach(button => button.onclick = () => {
   document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.id === button.dataset.tab));
   document.querySelectorAll('[data-tab]').forEach(item => item.classList.toggle('active', item === button));
+  sessionStorage.setItem('board-tab', button.dataset.tab);
 });
-document.querySelector('[data-tab]').classList.add('active');
+const initialTab = sessionStorage.getItem('board-tab') || 'kanban';
+document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.id === initialTab));
+document.querySelectorAll('[data-tab]').forEach(button => {
+  button.classList.toggle('active', button.dataset.tab === initialTab);
+});
 async function boardAction(action) {
   const form = document.querySelector('#relation-form');
   const data = new FormData(form);
@@ -13,7 +18,7 @@ async function boardAction(action) {
   const result = await response.json();
   if (!response.ok) { alert(result.error || 'Ошибка операции'); return; }
   alert(result.result);
-  location.reload();
+  reloadBoard();
 }
 async function taskAction(action, task) {
   const related = document.querySelector('#related-' + CSS.escape(task));
@@ -23,7 +28,7 @@ async function taskAction(action, task) {
   const title = document.querySelector('#title-' + CSS.escape(task));
   const importance = document.querySelector('#importance-' + CSS.escape(task));
   const minutes = document.querySelector('#minutes-' + CSS.escape(task));
-  const tags = document.querySelector('#tags-' + CSS.escape(task));
+  const picker = document.querySelector('#task-modal .theme-picker');
   if (action === 'archive' && !confirm('Переместить задачу в архив?')) return;
   if (action === 'delete' && !confirm('Удалить задачу окончательно? Это действие нельзя отменить.')) return;
   if (action === 'subtask' && !text.trim()) { alert('Введите название подзадачи'); return; }
@@ -36,12 +41,12 @@ async function taskAction(action, task) {
       title: title ? title.value : null,
       importance: importance ? Number(importance.value) : null,
       minutes: minutes ? Number(minutes.value) : null,
-      tags: tags ? tags.value.split(',').map(item => item.trim()).filter(Boolean) : null})
+      tags: picker ? selectedThemes(picker) : null})
   });
   const result = await response.json();
   if (!response.ok) { alert(result.error || 'Ошибка операции'); return; }
   alert(result.result);
-  location.reload();
+  reloadBoard();
 }
 function showTask(id) {
   const source = document.querySelector('#task-details-' + CSS.escape(id));
@@ -50,6 +55,7 @@ function showTask(id) {
   if (!source || !body || !modal) return;
   body.innerHTML = source.innerHTML;
   modal.hidden = false;
+  setupThemePicker(body.querySelector('.theme-picker'));
 }
 function editTitle(id) {
   const title = document.querySelector('#task-modal .task-title') ||
@@ -72,10 +78,26 @@ async function saveInlineTitle(id, value) {
   await sendBoardAction({action:'edit', task:id, title:value, importance:null, minutes:null, tags:null});
 }
 async function addTask(column) {
-  const title = prompt('Название новой задачи:');
-  if (!title || !title.trim()) return;
-  const tags = prompt('Темы/теги через запятую (необязательно):') || '';
-  await sendBoardAction({action:'add', column, title:title.trim(), tags:tags.split(',').map(item => item.trim()).filter(Boolean)});
+  const modal = document.querySelector('#task-create-modal');
+  const title = document.querySelector('#new-task-title');
+  if (!modal || !title) return;
+  modal.dataset.column = column;
+  title.value = '';
+  modal.hidden = false;
+  setupThemePicker(document.querySelector('#new-task-themes'));
+  title.focus();
+}
+async function saveNewTask() {
+  const modal = document.querySelector('#task-create-modal');
+  const title = document.querySelector('#new-task-title');
+  if (!modal || !title || !title.value.trim()) {
+    alert('Введите название задачи');
+    return;
+  }
+  await sendBoardAction({
+    action: 'add', column: modal.dataset.column, title: title.value.trim(),
+    tags: selectedThemes(document.querySelector('#new-task-themes'))
+  });
 }
 async function sendBoardAction(payload) {
   const response = await fetch('/board/action', {
@@ -84,18 +106,120 @@ async function sendBoardAction(payload) {
   const result = await response.json();
   if (!response.ok) { alert(result.error || 'Ошибка операции'); return; }
   alert(result.result);
+  reloadBoard();
+}
+function reloadBoard() {
+  const selected = document.querySelector('.theme-list-item.active');
+  if (selected) sessionStorage.setItem('board-theme', selected.dataset.theme);
   location.reload();
 }
 function closeTask() {
   const modal = document.querySelector('#task-modal');
   if (modal) modal.hidden = true;
 }
+function closeTaskCreator() {
+  const modal = document.querySelector('#task-create-modal');
+  if (modal) modal.hidden = true;
+}
+function selectedThemes(picker) {
+  return picker
+    ? [...picker.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(input => input.value)
+      .filter(Boolean)
+    : [];
+}
+function setupThemePicker(picker) {
+  if (!picker || picker.dataset.ready) return;
+  picker.dataset.ready = 'true';
+  const search = picker.querySelector('.theme-search');
+  if (!search) return;
+  search.addEventListener('input', () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    picker.querySelectorAll('.theme-options label').forEach(label => {
+      label.hidden = query && !label.textContent.toLocaleLowerCase().includes(query);
+    });
+  });
+}
+function addTheme() {
+  const name = prompt('Название новой темы:');
+  if (name && name.trim()) sendBoardAction({action: 'add_theme', name: name.trim()});
+}
+function renameTheme(oldName) {
+  const name = prompt('Новое название темы:', oldName);
+  if (name && name.trim() && name.trim() !== oldName) {
+    sendBoardAction({action: 'rename_theme', task: oldName, name: name.trim()});
+  }
+}
+function selectTheme(name) {
+  sessionStorage.setItem('board-theme', name);
+  document.querySelectorAll('.theme-list-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.theme === name);
+  });
+  document.querySelectorAll('.theme-task-panel').forEach(panel => {
+    panel.hidden = panel.dataset.themePanel !== name;
+  });
+  const empty = document.querySelector('#theme-task-empty');
+  if (empty) empty.hidden = Boolean(name);
+}
+function setupKanbanDragAndDrop() {
+  document.querySelectorAll('.task-item[draggable="true"]').forEach(item => {
+    item.addEventListener('dragstart', event => {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', item.dataset.taskId);
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+  });
+  document.querySelectorAll('[data-drop-column]').forEach(column => {
+    column.addEventListener('dragover', event => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      column.classList.add('drag-over');
+    });
+    column.addEventListener('dragleave', event => {
+      if (!column.contains(event.relatedTarget)) column.classList.remove('drag-over');
+    });
+    column.addEventListener('drop', event => {
+      event.preventDefault();
+      column.classList.remove('drag-over');
+      const task = event.dataTransfer.getData('text/plain');
+      if (task) sendBoardAction({
+        action: 'move', task, column: column.dataset.dropColumn
+      });
+    });
+  });
+}
 document.addEventListener('DOMContentLoaded', () => {
   const modal = document.querySelector('#task-modal');
   if (modal) modal.addEventListener('click', event => {
     if (event.target.id === 'task-modal') closeTask();
   });
+  document.querySelectorAll('.theme-picker').forEach(setupThemePicker);
+  document.querySelectorAll('.theme-list-item').forEach(item => {
+    item.addEventListener('click', event => {
+      if (event.target.closest('.theme-rename')) {
+        renameTheme(item.dataset.theme);
+      } else {
+        selectTheme(item.dataset.theme);
+      }
+    });
+  });
+  const themeSearch = document.querySelector('#theme-search');
+  if (themeSearch) themeSearch.addEventListener('input', () => {
+    const query = themeSearch.value.trim().toLocaleLowerCase();
+    document.querySelectorAll('.theme-list-item').forEach(item => {
+      item.hidden = query && !item.dataset.theme.toLocaleLowerCase().includes(query);
+    });
+    setupKanbanDragAndDrop();
+  });
+  const savedTheme = sessionStorage.getItem('board-theme');
+  const savedItem = [...document.querySelectorAll('.theme-list-item')]
+    .find(item => item.dataset.theme === savedTheme);
+  if (savedItem) selectTheme(savedItem.dataset.theme);
 });
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeTask();
+  if (event.key === 'Escape') {
+    closeTask();
+    closeTaskCreator();
+  }
 });
