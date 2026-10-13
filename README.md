@@ -1,3 +1,6 @@
+# CONTEXT
+This is mainly a vibe-coded prototype to test what I want and whether or not it is achievable on the local machine. I've started it spontaniously (and because i couldnt find an instrument that would do i wanted it to do), and its not very thought out. Its 
+my first experience with relying so much on agents, and im doing it in most inefficient ways. I also havent worked on any creation of ai-powered apps before and experimenting with architecture of a whole thing.
 # LocalAiTaskManager
 
 A task manager with a local AI assistant. Run the AI model on your own computer and use it to create, organize, prioritize, and work with tasks without sending your task data to a hosted AI provider.
