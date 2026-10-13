@@ -5,6 +5,7 @@ from ..conversation import chats, agent, topics
 from ..planner import tasks, goals, schedule, themes
 from ..education import subjects, timetable
 from . import board_page
+from ..infrastructure import history
 from ..infrastructure.journal import show_journal
 
 def _page():
@@ -53,6 +54,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/state":
             with chats.LOCK:
                 self._json(state_payload())
+        elif self.path == "/history":
+            with chats.LOCK:
+                try:
+                    self._json({"items": history.log()})
+                except RuntimeError as e:
+                    self._json({"error": str(e)}, 500)
         else:
             self._json({"error": "нет такого адреса"}, 404)
 
@@ -124,6 +131,19 @@ class Handler(BaseHTTPRequestHandler):
             if fn is None:
                 return self._json({"error": "неизвестная локальная команда"}, 400)
             return self._json({"name": name, "result": str(fn())})
+        if p == "/history/show":
+            try:
+                return self._json({"diff": history.show(str(body.get("sha") or ""))})
+            except (ValueError, RuntimeError) as e:
+                return self._json({"error": str(e)}, 400)
+        if p == "/history/rollback":
+            try:
+                history.rollback_to_before(str(body.get("sha") or ""))
+            except (ValueError, RuntimeError) as e:
+                return self._json({"error": str(e)}, 400)
+            # Сохранённый план мог ссылаться на задачи, которых уже нет.
+            chats.set_pending_plan(chats.current_chat(), None)
+            return self._json({"ok": True})
         if p == "/board/action":
             action = str(body.get("action") or "")
             first = str(body.get("task") or "")
@@ -132,8 +152,6 @@ class Handler(BaseHTTPRequestHandler):
                 result = themes.add(body.get("name", ""))
             elif action == "rename_theme":
                 result = themes.rename(first, body.get("name", ""))
-            elif action == "delete_theme":
-                result = themes.remove(first)
             elif action == "move":
                 result = tasks.move_task(first, str(body.get("column") or ""))
             elif action == "link":
@@ -161,5 +179,6 @@ class Handler(BaseHTTPRequestHandler):
                     tags=body.get("tags"))
             else:
                 return self._json({"error": "неизвестное действие доски"}, 400)
+            history.commit_safe(f"доска: {action} {first or body.get('title') or ''}".strip())
             return self._json({"result": result})
         return self._json({"error": "нет такого адреса"}, 404)

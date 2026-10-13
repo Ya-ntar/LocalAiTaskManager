@@ -1,6 +1,6 @@
 import sys
 from http.server import ThreadingHTTPServer
-from .infrastructure import store
+from .infrastructure import store, history
 from .conversation import chats
 from .planner import tasks
 from .infrastructure.config import PORT
@@ -9,6 +9,10 @@ from .web.console import console_main
 
 def main():
     store.migrate_user_data()
+    try:
+        history.init()
+    except Exception as e:
+        print(f"История изменений недоступна: {e}")
     if "--console" in sys.argv:
         console_main()
         return

@@ -34,6 +34,10 @@ TOOLS = [
     fn("apply_task_changes", "Применить ранее показанный и подтверждённый пользователем план по точным ID. Не выдумывай операции заново.", {
         "operations": {"type": "array", "items": {"type": "object"}}}, ["operations"]),
     fn("show_board", "Показать все задачи по колонкам", {}),
+    fn("add_task_tags", "Добавить темы-теги нескольким задачам по точным ID, сохранив существующие теги.", {
+        "task_ids": {"type": "array", "items": {"type": "string"}},
+        "tags": {"type": "array", "items": {"type": "string"}}},
+        ["task_ids", "tags"]),
     fn("list_themes", "Показать все темы-теги, включая темы без задач", {}),
     fn("add_theme", "Создать тему-тег. Тема создаётся независимо от задач и может пока быть пустой.", {
         "name": {"type": "string"}}, ["name"]),
@@ -81,6 +85,9 @@ TOOLS = [
         "window_days": {"type": "integer"},
         "subject": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}}}, ["title"]),
+    fn("set_task_due", "Установить дедлайн задачи по точному ID. Дата хранится без времени, в формате YYYY-MM-DD.", {
+        "task_id": {"type": "string"},
+        "due": {"type": "string"}}, ["task_id", "due"]),
     fn("delete_task", "Удалить одну или несколько задач навсегда. Для дубликатов используй точные id; только по явной просьбе пользователя", {
         "title": {"type": "string", "description": "Название только для одной однозначной задачи"},
         "task_id": {"type": "string", "description": "Один или несколько точных id задач"}}),
@@ -157,6 +164,8 @@ TOOLS = [
 ]
 
 WRITE = {"add_task", "update_task", "edit_task", "delete_task", "add_task_note",
+         "add_task_tags",
+         "set_task_due",
          "link_tasks", "block_task", "unblock_task", "add_goal",
          "add_theme", "rename_theme", "delete_theme",
          "open_topic", "add_note", "close_topic", "reopen_topic", "set_schedule",
@@ -168,11 +177,13 @@ FUNCS = {
     "propose_task_changes": tasks.propose_task_changes,
     "apply_task_changes": tasks.apply_task_changes,
     "show_board": tasks.show_board, "deadlines": tasks.deadlines,
+    "add_task_tags": tasks.add_task_tags,
     "list_themes": themes.load,
     "add_theme": themes.add,
     "rename_theme": themes.rename,
     "delete_theme": themes.remove,
     "add_task": tasks.add_task, "update_task": tasks.update_task, "delete_task": tasks.delete_task,
+    "set_task_due": tasks.set_task_due,
     "task_details": tasks.task_details, "edit_task": tasks.edit_task,
     "add_task_note": tasks.add_task_note,
     "link_tasks": tasks.link_tasks, "block_task": tasks.block_task, "unblock_task": tasks.unblock_task,

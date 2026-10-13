@@ -36,7 +36,8 @@ def create_chat(title="Новый чат"):
     now = datetime.datetime.now()
     cid = f"{now:%Y%m%d-%H%M%S}-{now.microsecond // 1000:03d}"
     chat = {"id": cid, "title": title, "created": _now_iso(), "updated": _now_iso(),
-            "messages": [], "pending_plan": None}
+            "messages": [], "pending_plan": None,
+            "referenced_task_ids": [], "referenced_theme_names": []}
     _write_chat(chat)
     return chat
 
@@ -61,6 +62,8 @@ def current_chat():
     chat.setdefault("title", "Новый чат")
     chat.setdefault("messages", [])
     chat.setdefault("pending_plan", None)
+    chat.setdefault("referenced_task_ids", [])
+    chat.setdefault("referenced_theme_names", [])
     return chat
 
 def switch_chat(cid):
@@ -110,6 +113,14 @@ def record(chat, user_text, reply):
 
 def set_pending_plan(chat, plan):
     chat["pending_plan"] = plan
+    chat["updated"] = _now_iso()
+    _write_chat(chat)
+
+def set_references(chat, task_ids=None, theme_names=None):
+    if task_ids is not None:
+        chat["referenced_task_ids"] = list(dict.fromkeys(task_ids))
+    if theme_names is not None:
+        chat["referenced_theme_names"] = list(dict.fromkeys(theme_names))
     chat["updated"] = _now_iso()
     _write_chat(chat)
 

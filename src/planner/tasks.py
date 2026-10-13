@@ -206,8 +206,48 @@ def update_task(title, column="", due="", effort="", minutes=None, risk="", impo
     save_tasks(tasks)
     return f"Обновлено: {task_line(task)}"
 
+def set_task_due(task_id, due):
+    task_list = load_tasks()
+    task = next((item for item in task_list if item.get("id") == task_id), None)
+    if not task:
+        return f"Задача с id «{task_id}» не найдена"
+    try:
+        check_due(due)
+    except ValueError:
+        return "Дедлайн нужен в формате YYYY-MM-DD"
+    task["due"] = due
+    task["touched"] = today().isoformat()
+    save_tasks(task_list)
+    return f"Обновлено: {task_line(task)}"
+
 def _normalize_tags(tags, subject=""):
     return task_format.normalize_tags(tags, subject)
+
+def add_task_tags(task_ids, tags):
+    """Add tags to exact task IDs without replacing existing tags."""
+    if not isinstance(task_ids, list) or not task_ids:
+        return "Нужно указать хотя бы один id задачи"
+    if not isinstance(tags, list) or not tags:
+        return "Нужно указать хотя бы один тег"
+    task_list = load_tasks()
+    by_id = {task.get("id"): task for task in task_list}
+    missing = [task_id for task_id in task_ids if task_id not in by_id]
+    if missing:
+        return f"Задачи с id не найдены: {', '.join(missing)}"
+    normalized = _normalize_tags(tags)
+    if not normalized:
+        return "Теги не могут быть пустыми"
+    changed = []
+    for task_id in dict.fromkeys(task_ids):
+        task = by_id[task_id]
+        current = task.setdefault("tags", [])
+        for tag in normalized:
+            if tag.casefold() not in {str(item).casefold() for item in current}:
+                current.append(tag)
+        task["touched"] = today().isoformat()
+        changed.append({"id": task_id, "title": task["title"], "tags": current})
+    save_tasks(task_list)
+    return json.dumps({"updated": changed, "count": len(changed)}, ensure_ascii=False)
 
 def edit_task(task, title=None, importance=None, minutes=None, tags=None):
     tasks = load_tasks()

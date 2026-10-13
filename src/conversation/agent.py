@@ -1,7 +1,7 @@
 import json, os, datetime, urllib.request
 import re
 from ..infrastructure.config import API, MODEL, HISTORY_LIMIT, INSTR_DIR, WEEKDAYS
-from ..planner import tasks, goals, schedule
+from ..planner import tasks, goals, schedule, themes
 from . import topics, tools, chats, textcheck
 from ..education import timetable, subjects
 from ..infrastructure.journal import log_change
@@ -28,7 +28,7 @@ def context_block():
     pending = chats.current_chat().get("pending_plan")
     plan_text = f"\n\nОжидающий план изменений:\n{json.dumps(pending, ensure_ascii=False)}" if pending else ""
     return (f"Расписание: {schedule.schedule_text()}\n\n"
-            f"Занятия (есть = факт, хочу = план):\n{timetable.view('', 2)}\n\n"
+            f"Занятия (есть = факт, хочу = план):\n{timetable.view('', 7)}\n\n"
             f"Предметы:\n{subjects.show_subjects()}\n\n"
             f"Сейчас стоит спросить: {subjects.subject_to_ask() or 'никого срочного, спрашивать не нужно'}\n\n"
             f"Доска:\n{tasks.show_board()}\n\n"
@@ -38,6 +38,23 @@ def context_block():
 
 def system_prompt():
     return _read("agent.txt").replace("{now}", now_text()) + "\n\n" + context_block()
+
+def _execution_context(chat):
+    task_ids = chat.get("referenced_task_ids", [])
+    if not task_ids:
+        return ""
+    selected = [task for task in tasks.load_tasks() if task.get("id") in task_ids]
+    lines = [
+        "Внутренний контекст для исполнения (не пересказывай его пользователю):",
+        _read("task_analyzer.txt"),
+        "Последние явно определённые задачи:"
+    ]
+    lines.extend(
+        f"- id {task['id']}: {task['title']} | теги: {', '.join(task.get('tags', [])) or 'нет'}"
+        for task in selected
+    )
+    lines.append("Если пользователь ссылается на «них/им/эти задачи», используй только эти id.")
+    return "\n".join(lines)
 
 def opening_text():
     active = [t for t in tasks.load_tasks() if t["column"] in ("Сегодня", "Входящие")]
@@ -56,7 +73,7 @@ def ask(messages):
 def _write_requested(text):
     if not text:
         return False
-    return bool(re.search(r"\b(добавь|добавить|запиши|записать|создай|создать|сохрани|сохранить|измени|изменить|удали|удалить|отмени|отменить|архивируй|архивировать|примени|применить|подтверди|подтверждаю|выполни|выполнить)\b",
+    return bool(re.search(r"(добавь|добавить|запиши|записать|создай|создать|сохрани|сохранить|измени|изменить|удали|удалить|отмени|отменить|архивируй|архивировать|примени|применить|подтверди|подтверждаю|выполни|выполнить)",
                          text.lower()))
 
 def _explicit_task_ids(text):
@@ -125,9 +142,99 @@ def _duplicate_groups_for_tasks(task_list):
         groups.setdefault(key, []).append(task)
     return {key: group for key, group in groups.items() if len(group) > 1}
 
+def _theme_mentions(text):
+    lowered = (text or "").casefold()
+    return [
+        name for name in themes.load()
+        if name != themes.DEFAULT_THEME and name.casefold() in lowered
+    ]
+
+def _tasks_mentioned(text):
+    task_list = tasks.load_tasks()
+    lowered = (text or "").casefold()
+    ids = _explicit_task_ids(text)
+    ids.extend(
+        task["id"] for task in sorted(
+            task_list, key=lambda item: len(item.get("title", "")), reverse=True
+        )
+        if task.get("title", "").casefold() in lowered
+    )
+    return list(dict.fromkeys(task_id for task_id in ids
+                             if any(item.get("id") == task_id for item in task_list)))
+
+def _remember_references(user_text, chat):
+    task_ids = _tasks_mentioned(user_text)
+    mentioned_themes = _theme_mentions(user_text)
+    if not task_ids:
+        for name in mentioned_themes:
+            task_ids.extend(
+                task["id"] for task in tasks.load_tasks()
+                if any(str(tag).casefold() == name.casefold()
+                       for tag in task.get("tags", []))
+            )
+    if task_ids or mentioned_themes:
+        chats.set_references(chat, task_ids or None, mentioned_themes or None)
+    return task_ids or list(chat.get("referenced_task_ids", []))
+
+def _requested_tags(text):
+    text = (text or "").strip()
+    known = _theme_mentions(text)
+    lowered = text.casefold()
+    for marker in ("в тему", "в темы", "в тег", "в теги", "в задачи",
+                   "тег", "теги", "тему"):
+        position = lowered.rfind(marker)
+        if position >= 0:
+            tail = text[position + len(marker):].strip(" \t:,.!?")
+            if tail:
+                known.append(tail)
+                break
+    result = []
+    for tag in known:
+        normalized = " ".join(str(tag).split()).strip(" ,.!?")
+        if normalized and normalized.casefold() not in {item.casefold() for item in result}:
+            result.append(normalized)
+    return result
+
+def _handle_tag_request(user_text, chat):
+    if not re.search(r"(добавь|добавить|присоедини|прикрепи)", user_text or "", re.IGNORECASE):
+        return None
+    if not re.search(r"(тег|теги|тему|темы)", user_text or "", re.IGNORECASE):
+        return None
+    task_ids = _remember_references(user_text, chat)
+    source_match = re.search(r"из\s+(.+?)(?:\s+в\s+|\s*$)", user_text, re.IGNORECASE)
+    if source_match:
+        source_text = source_match.group(1).casefold()
+        for name in themes.load():
+            if name != themes.DEFAULT_THEME and name.casefold() in source_text:
+                task_ids = [
+                    task["id"] for task in tasks.load_tasks()
+                    if any(str(tag).casefold() == name.casefold()
+                           for tag in task.get("tags", []))
+                ]
+                break
+    tags = _requested_tags(user_text)
+    if not task_ids or not tags:
+        return None
+    for tag in tags:
+        if tag.casefold() != themes.DEFAULT_THEME.casefold():
+            themes.add(tag)
+    result = tools.FUNCS["add_task_tags"](task_ids=task_ids, tags=tags)
+    if not str(result).startswith("{"):
+        return f"Не удалось добавить теги: {result}", []
+    payload = json.loads(result)
+    log_change("add_task_tags", {"task_ids": task_ids, "tags": tags}, result)
+    names = ", ".join(item["title"] for item in payload["updated"])
+    return f"Добавлены теги «{', '.join(tags)}» к задачам: {names}", [
+        f"[add_task_tags] {result}"
+    ]
 
 def _handle_duplicate_analysis(user_text, chat):
-    if not re.search(r"(дубликат|дубли|повтор|повторя|сгруппируй|сравни|найди.*дублик|найди.*повтор|посмотри.*дублик)", user_text, re.IGNORECASE):
+    if not re.search(
+        r"(дубликат|дубли|сгруппируй|сравни|"
+        r"найди.*дублик|посмотри.*дублик|повторяющ(?:иеся|ихся)\s+задач)",
+        user_text,
+        re.IGNORECASE,
+    ):
         return None
     task_list = tasks.load_tasks()
     groups = _duplicate_groups_for_tasks(task_list)
@@ -155,6 +262,45 @@ def _handle_duplicate_analysis(user_text, chat):
     summary = "\n".join(summary_lines) + "\n\nПодтвердите удаление этих дубликатов."
     return summary, [f"[propose_task_changes] {preview}"]
 
+def _handle_due_from_next_class(user_text, history=()):
+    lowered = (user_text or "").casefold()
+    if not all(word in lowered for word in ("дедлайн", "задач")):
+        return None
+    if "заняти" not in lowered:
+        return None
+    if "следующ" not in lowered and "когда" not in lowered:
+        return None
+    candidates = [task for task in tasks.load_tasks()
+                  if "проверить наличие домашки" in task.get("title", "").casefold()]
+    history_text = " ".join(str(item.get("content") or "")
+                            for item in history if isinstance(item, dict))
+    mentioned = [task for task in candidates if task.get("title", "") in history_text]
+    if mentioned:
+        candidates = mentioned
+    if len(candidates) != 1:
+        return None
+    task = candidates[0]
+    subject = (task.get("subject") or "").casefold()
+    if not subject:
+        return None
+    day = tasks.today()
+    occurrence = None
+    for offset in range(0, 366):
+        current = day + datetime.timedelta(days=offset)
+        matching = [item for item in timetable.items_on(current)
+                    if subject in item.get("title", "").casefold()]
+        if matching:
+            occurrence = current
+            break
+    if occurrence is None:
+        return "Не удалось найти ближайшее занятие для предмета «%s»." % task["subject"], []
+    due = occurrence.isoformat()
+    result = tools.FUNCS["set_task_due"](task_id=task["id"], due=due)
+    if not str(result).startswith("Обновлено:"):
+        return f"Не удалось установить дедлайн: {result}", []
+    log_change("set_task_due", {"task_id": task["id"], "due": due}, result)
+    return (f"Дедлайн задачи «{task['title']}» установлен на {due} "
+            f"по ближайшему занятию «{subject}».", [f"[set_task_due] {result}"])
 
 def _apply_saved_plan(chat, history):
     pending = chat.get("pending_plan")
@@ -183,7 +329,9 @@ def _apply_saved_plan(chat, history):
 def _write_succeeded(name, result):
     prefixes = {
         "add_task": "Добавлено:",
+        "add_task_tags": "{\"updated\":",
         "update_task": "Обновлено:",
+        "set_task_due": "Обновлено:",
         "edit_task": "Обновлено:",
         "delete_task": "Удалено:",
         "add_task_note": "Заметка добавлена",
@@ -216,9 +364,16 @@ def run_turn(user_text, history, hint=""):
         if applied:
             return applied
     if user_text:
+        _remember_references(user_text, chat)
+        due_result = _handle_due_from_next_class(user_text, history)
+        if due_result is not None:
+            return due_result
         duplicate_summary = _handle_duplicate_analysis(user_text, chat)
         if duplicate_summary is not None:
             return duplicate_summary
+        tag_result = _handle_tag_request(user_text, chat)
+        if tag_result is not None:
+            return tag_result
     explicit_ids = _explicit_deletion_ids(user_text)
     if not explicit_ids and user_text and _deletion_requested(user_text):
         explicit_ids = _explicit_task_ids(user_text)
@@ -231,7 +386,11 @@ def run_turn(user_text, history, hint=""):
             return "Удалены указанные задачи. Операций: " + str(json.loads(result).get("count", 0)), [
                 f"[apply_task_changes] {result}"
             ]
-    messages = [{"role": "system", "content": system_prompt()}] + history[-HISTORY_LIMIT:]
+    messages = [{"role": "system", "content": system_prompt()}]
+    execution_context = _execution_context(chat)
+    if execution_context:
+        messages.append({"role": "system", "content": execution_context})
+    messages.extend(history[-HISTORY_LIMIT:])
     if hint:
         messages.append({"role": "system", "content": hint})
     if user_text:

@@ -29,6 +29,16 @@ textarea{flex:1;height:70px;font-size:16px;padding:8px;border-radius:8px;border:
 .quick button:hover{background:#eee}
 button:disabled,textarea:disabled{background:#999;opacity:.7}
 .hint{font-size:12px;color:#888;margin-top:4px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:20}
+.modal[hidden]{display:none}
+.modal .box{background:#fff;border-radius:10px;padding:20px;width:min(760px,94vw);max-height:88vh;overflow-y:auto;position:relative}
+.modal .close{position:absolute;right:12px;top:12px;padding:5px 9px;border:1px solid #bbb;border-radius:6px;background:#fff;cursor:pointer}
+.modal h2{margin-top:0;padding-right:90px}
+.hrow{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #eee;flex-wrap:wrap}
+.hrow span{flex:1;min-width:200px;font-size:14px;word-break:break-word}
+.hrow button{padding:4px 8px;border:1px solid #bbb;border-radius:5px;background:#fff;cursor:pointer}
+.hrow button:hover{background:#e8f0ff;border-color:#2d6cdf}
+#hist-diff{background:#f7f7f7;padding:10px;font-size:12px;white-space:pre-wrap;overflow-x:auto;max-height:40vh;margin-top:10px}
 @media (max-width:640px){
   body{flex-direction:column;height:auto;min-height:100vh}
   aside{width:auto;border-right:none;border-bottom:1px solid #ddd;max-height:30vh}
@@ -46,6 +56,7 @@ button:disabled,textarea:disabled{background:#999;opacity:.7}
       <button id="rename">Переименовать</button>
       <button id="clear">Очистить</button>
       <button id="delete">Удалить</button>
+      <button id="history">История</button>
       <button id="board">Канбан-доска</button>
     </span>
   </header>
@@ -62,6 +73,17 @@ button:disabled,textarea:disabled{background:#999;opacity:.7}
   </div>
   <div class="hint">Enter — отправить, Shift+Enter — новая строка. Команды: /неделя /месяц /итог /дедлайны /журнал</div>
 </main>
+
+<div id="hist" class="modal" hidden>
+  <div class="box">
+    <button id="hist-close" class="close">Закрыть</button>
+    <h2>История изменений</h2>
+    <p class="hint">Откат возвращает задачи, темы, расписание и предметы к состоянию до выбранного изменения. Текущее состояние сохраняется, поэтому откат тоже можно отменить. Переписка с ИИ не затрагивается.</p>
+    <div id="hist-list"></div>
+    <pre id="hist-diff"></pre>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 const chat = $('chat'), ta = $('t'), btn = $('b'), list = $('list');
@@ -111,6 +133,7 @@ async function act(path, body) {
     const r = await api(path, body);
     if (r.error) alert(r.error);
     await refresh();
+    return r;
   } catch (e) {
     alert('Нет связи с сервером: ' + e);
   }
@@ -148,6 +171,57 @@ async function localCommand(name, button) {
   }
 }
 
+async function openHistory() {
+  $('hist').hidden = false;
+  $('hist-diff').textContent = '';
+  await loadHistory();
+}
+
+async function loadHistory() {
+  const box = $('hist-list');
+  box.innerHTML = '';
+  let r;
+  try {
+    r = await (await fetch('/history')).json();
+  } catch (e) {
+    box.textContent = 'Нет связи с сервером: ' + e;
+    return;
+  }
+  if (r.error) { box.textContent = r.error; return; }
+  r.items.forEach(([sha, date, msg]) => {
+    const row = document.createElement('div');
+    row.className = 'hrow';
+    const text = document.createElement('span');
+    text.textContent = date + '  ' + msg;
+    const view = document.createElement('button');
+    view.textContent = 'Показать';
+    view.onclick = () => showDiff(sha);
+    const back = document.createElement('button');
+    back.textContent = 'Откатить до этого';
+    back.onclick = () => rollback(sha, msg);
+    row.append(text, view, back);
+    box.appendChild(row);
+  });
+}
+
+async function showDiff(sha) {
+  try {
+    const r = await api('/history/show', {sha});
+    $('hist-diff').textContent = r.error || r.diff;
+  } catch (e) {
+    $('hist-diff').textContent = 'Нет связи с сервером: ' + e;
+  }
+}
+
+async function rollback(sha, msg) {
+  if (!confirm('Откатить данные до изменения «' + msg + '»?\nТекущее состояние сохранится, откат можно отменить.')) return;
+  const r = await act('/history/rollback', {sha});
+  if (r && r.ok) {
+    $('hist').hidden = true;
+    alert('Откат выполнен. Если доска открыта в другой вкладке, обновите её.');
+  }
+}
+
 $('new').onclick = () => act('/chat/new');
 $('clear').onclick = () => {
   if (confirm('Очистить историю этого чата? Задачи, цели и темы не удалятся.'))
@@ -162,6 +236,9 @@ $('rename').onclick = () => {
   if (t) act('/chat/rename', {id: state.chat.id, title: t});
 };
 $('board').onclick = () => { window.open('/board.html', '_blank'); };
+$('history').onclick = openHistory;
+$('hist-close').onclick = () => { $('hist').hidden = true; };
+$('hist').addEventListener('click', e => { if (e.target.id === 'hist') $('hist').hidden = true; });
 $('quick').addEventListener('click', e => {
   const button = e.target.closest('button[data-command]');
   if (button) localCommand(button.dataset.command, button);
