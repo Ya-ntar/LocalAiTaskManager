@@ -150,6 +150,10 @@ function renameTheme(oldName) {
     sendBoardAction({action: 'rename_theme', task: oldName, name: name.trim()});
   }
 }
+function deleteTheme(name) {
+  if (!confirm('Удалить тему «' + name + '»? Тема будет убрана у всех задач.')) return;
+  sendBoardAction({action: 'delete_theme', task: name});
+}
 function selectTheme(name) {
   sessionStorage.setItem('board-theme', name);
   document.querySelectorAll('.theme-list-item').forEach(item => {

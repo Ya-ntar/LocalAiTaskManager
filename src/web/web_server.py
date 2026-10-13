@@ -106,11 +106,7 @@ class Handler(BaseHTTPRequestHandler):
             err = chats.rename_chat(body.get("id", ""), body.get("title", ""))
             return self._json({"error": err} if err else {"ok": True})
         if p == "/open":
-            chat = chats.current_chat()
-            if chat["messages"]:
-                return self._json({"reply": ""})
-            text, _ = agent.start_session(chat)
-            return self._json({"reply": text})
+            return self._json({"reply": ""})
         if p == "/send":
             text = str(body.get("text") or "").strip()
             if not text:
@@ -136,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = themes.add(body.get("name", ""))
             elif action == "rename_theme":
                 result = themes.rename(first, body.get("name", ""))
+            elif action == "delete_theme":
+                result = themes.remove(first)
             elif action == "move":
                 result = tasks.move_task(first, str(body.get("column") or ""))
             elif action == "link":

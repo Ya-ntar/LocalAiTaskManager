@@ -106,27 +106,11 @@ async function refresh() {
   });
 }
 
-async function ensureOpening() {
-  if (state.chat.messages.length === 0) {
-    busy(true);
-    try {
-      const r = await api('/open');
-      if (r.error) alert(r.error);
-    } catch (e) {
-      alert('Не удалось начать сессию: ' + e);
-    } finally {
-      busy(false);
-    }
-    await refresh();
-  }
-}
-
 async function act(path, body) {
   try {
     const r = await api(path, body);
     if (r.error) alert(r.error);
     await refresh();
-    await ensureOpening();
   } catch (e) {
     alert('Нет связи с сервером: ' + e);
   }
@@ -187,5 +171,5 @@ ta.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 
-(async () => { await refresh(); await ensureOpening(); ta.focus(); })();
+(async () => { await refresh(); ta.focus(); })();
 </script></body></html>

@@ -18,8 +18,6 @@ def console_main():
     chat = chats.current_chat()
     print("Команды: /чаты /новый /очистить /неделя /месяц /итог /дедлайны /журнал /выход")
     print("Строка с \\ на конце продолжается на следующей строке.")
-    if not chat["messages"]:
-        agent.start_session(chat)
     while True:
         text = read_message(f"\n{chat['title']} > ")
         if not text:
@@ -37,12 +35,10 @@ def console_main():
         if text == "/новый":
             chat = chats.create_chat()
             chats.STATE["chat_id"] = chat["id"]
-            agent.start_session(chat)
             continue
         if text == "/очистить":
             chats.clear_chat()
             chat = chats.current_chat()
-            agent.start_session(chat)
             continue
         sent = agent.expand(text)
         reply, _ = agent.run_turn(sent, chat["messages"])

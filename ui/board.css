@@ -40,7 +40,9 @@ ul{padding:0;margin:0} h1{margin-top:0;font-size:22px} h2{font-size:18px}
 .add-theme-button{width:28px;height:28px;border:1px solid #aaa;border-radius:50%;background:#fff;font-size:20px;cursor:pointer}
 .theme-list-item{display:flex;width:100%;justify-content:space-between;gap:8px;padding:9px;border:0;border-radius:5px;background:transparent;text-align:left;cursor:pointer;font:inherit}
 .theme-list-item:hover,.theme-list-item.active{background:#e8f0ff;color:#174ea6}
-.theme-rename{color:#777}
+.theme-actions{display:flex;gap:8px;color:#777}
+.theme-rename,.theme-delete{cursor:pointer}
+.theme-rename:hover,.theme-delete:hover{color:#174ea6}
 .theme-task-panel h2{margin-top:0}
 .theme-picker{border:1px solid #ddd;border-radius:6px;padding:8px;max-width:560px}
 .theme-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:5px;margin-top:8px;max-height:180px;overflow-y:auto}

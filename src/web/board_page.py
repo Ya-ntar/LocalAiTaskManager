@@ -62,9 +62,7 @@ def render_columns(tasks, item_text, sorted_items):
     for c in COLUMNS:
         items = "".join(
             f"<li class='task-item' draggable='true' data-task-id='{html.escape(t['id'], quote=True)}' "
-            f"data-column='{html.escape(c, quote=True)}'><button class='task-card' type='button' "
-            f"onclick=\"showTask('{html.escape(t['id'], quote=True)}')\">"
-            f"{html.escape(item_text(t))}</button></li>"
+            f"data-column='{html.escape(c, quote=True)}'>{render_task_link(t, item_text(t))}</li>"
             for t in sorted_items(tasks, c)
         )
         drop_attribute = (
@@ -79,12 +77,21 @@ def render_columns(tasks, item_text, sorted_items):
         )
     return f"<div class='board'>{cols}</div>"
 
+
+def render_task_link(task, text):
+    task_id = html.escape(task["id"], quote=True)
+    return (
+        f"<button class='task-card' type='button' onclick=\"showTask('{task_id}')\">"
+        f"{html.escape(text)}</button>"
+    )
+
 def render_theme_picker(task_id, selected, theme_names):
     options = "".join(
         f"<label><input type='checkbox' value='{html.escape(name, quote=True)}'"
         f"{' checked' if (name in selected or (name == theme_model.DEFAULT_THEME and not selected)) else ''}>"
         f"{html.escape(name)}</label>"
         for name in theme_names
+        if name != theme_model.DEFAULT_THEME
     )
     return (
         f"<div class='theme-picker' id='theme-picker-{html.escape(task_id, quote=True)}'>"
@@ -157,8 +164,7 @@ def render_theme_tasks(tasks, item_text, theme_name):
     if not selected:
         return "<p class='muted'>Для этой темы задач нет.</p>"
     return "<ul>" + "".join(
-        f"<li><button class='task-card' type='button' onclick=\"showTask('{html.escape(task['id'], quote=True)}')\">"
-        f"{html.escape(item_text(task))}</button></li>"
+        f"<li>{render_task_link(task, item_text(task))}</li>"
         for task in sorted(selected, key=item_text)
     ) + "</ul>"
 
@@ -167,7 +173,15 @@ def render_themes(tasks, item_text, theme_names):
     def rename_control(name):
         if name == theme_model.DEFAULT_THEME:
             return ""
-        return "<span class='theme-rename' title='Переименовать'>✎</span>"
+        escaped = html.escape(name, quote=True)
+        return (
+            f"<span class='theme-actions'>"
+            f"<span class='theme-rename' title='Переименовать' "
+            f"onclick=\"event.stopPropagation(); renameTheme('{escaped}')\">✎</span>"
+            f"<span class='theme-delete' title='Удалить тему' "
+            f"onclick=\"event.stopPropagation(); deleteTheme('{escaped}')\">×</span>"
+            f"</span>"
+        )
 
     items = "".join(
         f"<button class='theme-list-item' type='button' data-theme='{html.escape(name, quote=True)}'>"
@@ -194,6 +208,7 @@ def render_task_creator(theme_names):
     options = "".join(
         f"<label><input type='checkbox' value='{html.escape(name, quote=True)}'>{html.escape(name)}</label>"
         for name in theme_names
+        if name != theme_model.DEFAULT_THEME
     )
     return f"""<div id='task-create-modal' class='modal' hidden><div class='modal-content'>
 <button class='modal-close' type='button' onclick='closeTaskCreator()'>Закрыть</button>

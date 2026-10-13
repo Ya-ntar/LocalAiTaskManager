@@ -79,3 +79,29 @@ def rename(old_name, new_name):
     names = sorted(dict.fromkeys(names), key=str.casefold)
     store.write_json(PATH, names)
     return f"Тема переименована: «{old}» → «{new}»"
+
+
+def remove(name):
+    target = _normalize(name)
+    if not target:
+        return "Название темы не может быть пустым"
+    if _key(target) == _key(DEFAULT_THEME):
+        return f"Тему «{DEFAULT_THEME}» нельзя удалить"
+    names = load()
+    if not any(_key(item) == _key(target) for item in names):
+        return f"Тема «{target}» не найдена"
+
+    task_list = task_repository.load_tasks()
+    changed = False
+    for task in task_list:
+        updated = [tag for tag in task.get("tags", [])
+                   if _key(tag) != _key(target)]
+        if updated != task.get("tags", []):
+            task["tags"] = updated
+            changed = True
+    if changed:
+        task_repository.save_tasks(task_list)
+
+    names = [item for item in names if _key(item) != _key(target)]
+    store.write_json(PATH, names)
+    return f"Тема удалена: «{target}»"
