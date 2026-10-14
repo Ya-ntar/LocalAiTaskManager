@@ -1,6 +1,7 @@
 import json, os, datetime, urllib.request
 import re
-from ..infrastructure.config import API, MODEL, HISTORY_LIMIT, INSTR_DIR, WEEKDAYS
+from ..infrastructure.config import (API, MODEL, HISTORY_LIMIT, INSTR_DIR, WEEKDAYS,
+                                     PROMPT_CHAR_LIMIT)
 from ..planner import tasks, goals, schedule, themes
 from . import topics, tools, chats, textcheck
 from ..education import timetable, subjects
@@ -27,7 +28,7 @@ def now_text():
 def context_block():
     pending = chats.current_chat().get("pending_plan")
     plan_text = f"\n\nОжидающий план изменений:\n{json.dumps(pending, ensure_ascii=False)}" if pending else ""
-    return (f"Расписание: {schedule.schedule_text()}\n\n"
+    context = (f"Расписание: {schedule.schedule_text()}\n\n"
             f"Занятия (есть = факт, хочу = план):\n{timetable.view('', 7)}\n\n"
             f"Предметы:\n{subjects.show_subjects()}\n\n"
             f"Сейчас стоит спросить: {subjects.subject_to_ask() or 'никого срочного, спрашивать не нужно'}\n\n"
@@ -35,6 +36,43 @@ def context_block():
             f"Дедлайны:\n{tasks.deadlines()}\n\n"
             f"Цели:\n{goals.show_goals()}\n\n"
             f"Открытые темы:\n{topics.list_topics()}{plan_text}")
+    # Keep the live state compact enough for 8K-context local models.
+    return context[:10000]
+
+
+def _bounded_messages(messages):
+    """Trim old conversation content while keeping the current request intact."""
+    limit = PROMPT_CHAR_LIMIT
+    total = sum(len(str(item.get("content") or "")) for item in messages)
+    if total <= limit:
+        return messages
+    current = messages[-1:] if messages and messages[-1].get("role") != "system" else []
+    system = [item for item in messages if item.get("role") == "system"]
+    middle = [item for item in messages if item.get("role") != "system" and item is not messages[-1]]
+    current_size = sum(len(str(item.get("content") or "")) for item in current)
+    remaining = max(0, limit - current_size)
+    result = []
+    for item in system:
+        content = str(item.get("content") or "")
+        if remaining <= 0:
+            break
+        if len(content) <= remaining:
+            result.append(item)
+            remaining -= len(content)
+        else:
+            result.append(dict(item, content=content[:remaining]))
+            remaining = 0
+            break
+    result += current
+    for item in reversed(middle):
+        content = str(item.get("content") or "")
+        if len(content) <= remaining:
+            result.insert(len(system), item)
+            remaining -= len(content)
+        elif remaining > 200:
+            result.insert(len(system), dict(item, content=content[-remaining:]))
+            break
+    return result
 
 def system_prompt():
     return _read("agent.txt").replace("{now}", now_text()) + "\n\n" + context_block()
@@ -64,7 +102,7 @@ def opening_text():
     return _read("opening_task.txt").replace("{title}", top["title"]).replace("{column}", top["column"])
 
 def ask(messages):
-    body = json.dumps({"model": MODEL, "messages": messages, "tools": tools.TOOLS,
+    body = json.dumps({"model": MODEL, "messages": _bounded_messages(messages), "tools": tools.TOOLS,
                        "temperature": 0.4}).encode("utf-8")
     req = urllib.request.Request(API, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:

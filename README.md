@@ -115,6 +115,15 @@ AI_API_KEY=local
 
 The API key is often ignored by local servers, but setting a placeholder such as `local` can be necessary for clients that require the field. Use the exact model identifier reported by your local server.
 
+The application also accepts `AI_API_URL` and `AI_MODEL` environment variables. Set them to the exact OpenAI-compatible endpoint and model identifier shown by LM Studio, for example:
+
+```powershell
+$env:AI_API_URL = "http://127.0.0.1:1234/v1/chat/completions"
+$env:AI_MODEL = "qwen2.5-7b-instruct-1m"
+```
+
+The `41343` port in LM Studio startup logs is an internal LM Studio API port. It is not the endpoint used by this application.
+
 ## Start the application
 
 Use the project’s Python entry point to start the backend. For example:
